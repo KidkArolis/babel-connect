@@ -1,19 +1,22 @@
-var babel = require("babel-core");
-var path  = require("path");
-var url   = require("url");
-var fs    = require("fs");
-var _     = require("lodash");
+var babel  = require("babel-core");
+var mkdirp = require("mkdirp");
+var path   = require("path");
+var url    = require("url");
+var fs     = require("fs");
+var _      = require("lodash");
 
 module.exports = function (opts) {
   opts = _.defaults(opts || {}, {
     options: {},
     dest:    "cache",
-    src:     "assets"
+    src:     "assets",
+    ignore:  false
   });
 
   var cache = Object.create(null);
 
   return function (req, res, next) {
+    if (opts.ignore && opts.ignore.test(req.url)) return next();
     if (!babel.canCompile(req.url)) return next();
 
     var pathname = path.normalize(url.parse(req.url).pathname);
@@ -22,19 +25,22 @@ module.exports = function (opts) {
     var srcStat;
 
     var send = function (data) {
-      res.set('Content-Type', 'application/javascript');
+      res.setHeader('Content-Type', 'application/javascript');
       res.end(data);
     };
 
     var write = function (transformed) {
-      fs.writeFile(dest, transformed, function (err) {
-        if (err) {
-          next(err);
-        } else {
-          cache[pathname] = +srcStat.mtime;
-          send(transformed);
-        }
-      });
+      mkdirp(path.dirname(dest), function (err) {
+        if (err) return next(err);
+        fs.writeFile(dest, transformed, function (err) {
+          if (err) {
+            next(err);
+          } else {
+            cache[pathname] = +srcStat.mtime;
+            send(transformed);
+          }
+        });
+      })
     };
 
     var compile = function () {
